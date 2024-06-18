@@ -2,7 +2,7 @@
 // @name         YNOproject Collective Unconscious Kalimba Performer
 // @name:zh-CN   YNOproject Collective Unconscious 卡林巴演奏家
 // @namespace    https://github.com/Exsper/
-// @version      0.1.0
+// @version      0.1.1
 // @description  Music can be played automatically based on the given score.
 // @description:zh-CN  可以根据给定乐谱自动演奏乐曲。
 // @author       Exsper
@@ -804,12 +804,17 @@ function MIDI2Song(isAllTrack) {
     function checkTrackPlayable(track) {
         let noteCount = track.notes.length;
         if (noteCount <= 0) return false;
+        let playableCount = getTrackPlayableNoteCount(track);
+        if ((playableCount / noteCount) < 0.9) return false;
+        return true;
+    }
+
+    function getTrackPlayableNoteCount(track) {
         let playableCount = 0;
         for (let i = 0; i < track.notes.length; i++) {
             if (indexToKey(track.notes[i].midi) !== 0) playableCount += 1;
         }
-        if ((playableCount / noteCount) < 0.9) return false;
-        return true;
+        return playableCount;
     }
 
     if (!midiData) return null;
@@ -827,7 +832,17 @@ function MIDI2Song(isAllTrack) {
         mix.sort((a, b) => (a.ticks === b.ticks ? a.midi - b.midi : a.ticks - b.ticks));
     }
     else {
-        mix = midiJson.tracks[0].notes;
+        // 选择可弹奏音符最多的音轨
+        let maxNoteTrackIndex = 0;
+        let maxNoteCount = 0;
+        for (let i = 0; i < midiJson.tracks.length; i++) {
+            let noteCount = getTrackPlayableNoteCount(midiJson.tracks[i]);
+            if (noteCount > maxNoteCount) {
+                maxNoteTrackIndex = i;
+                maxNoteCount = noteCount;
+            }
+        }
+        mix = midiJson.tracks[maxNoteTrackIndex].notes;
     }
 
     let intervalList = [];
