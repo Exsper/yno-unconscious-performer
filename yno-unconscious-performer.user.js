@@ -2,7 +2,7 @@
 // @name         YNOproject Collective Unconscious Kalimba Performer
 // @name:zh-CN   YNOproject Collective Unconscious 卡林巴演奏家
 // @namespace    https://github.com/Exsper/
-// @version      0.1.1
+// @version      0.1.2
 // @description  Music can be played automatically based on the given score.
 // @description:zh-CN  可以根据给定乐谱自动演奏乐曲。
 // @author       Exsper
@@ -817,6 +817,14 @@ function MIDI2Song(isAllTrack) {
         return playableCount;
     }
 
+    function getTrackPlayableNoteLength(track) {
+        let playableLength = 0;
+        for (let i = 0; i < track.notes.length; i++) {
+            if (indexToKey(track.notes[i].midi) !== 0) playableLength += track.notes[i].durationTicks;
+        }
+        return playableLength;
+    }
+
     if (!midiData) return null;
 
     let midiJson = midiData.JSON();
@@ -832,14 +840,14 @@ function MIDI2Song(isAllTrack) {
         mix.sort((a, b) => (a.ticks === b.ticks ? a.midi - b.midi : a.ticks - b.ticks));
     }
     else {
-        // 选择可弹奏音符最多的音轨
+        // 选择可弹奏音符最长的音轨
         let maxNoteTrackIndex = 0;
-        let maxNoteCount = 0;
+        let maxNoteLength = 0;
         for (let i = 0; i < midiJson.tracks.length; i++) {
-            let noteCount = getTrackPlayableNoteCount(midiJson.tracks[i]);
-            if (noteCount > maxNoteCount) {
+            let noteLength = getTrackPlayableNoteLength(midiJson.tracks[i]);
+            if (noteLength > maxNoteLength) {
                 maxNoteTrackIndex = i;
-                maxNoteCount = noteCount;
+                maxNoteLength = noteLength;
             }
         }
         mix = midiJson.tracks[maxNoteTrackIndex].notes;
@@ -854,13 +862,13 @@ function MIDI2Song(isAllTrack) {
         // 音符演奏长度一致，故不用考虑durationTicks
         let interval = mix[i].ticks - lastInterval;
         let key = approximateIndexToKey(mix[i].midi);
-        if (interval < 20) {
+        if (interval < 40) {
             // 如果同时间、同音符，则舍弃
             if (key === lastKey) {
                 continue;
             }
             else {
-                interval = 20;
+                interval = 40;
             }
         }
         intervalList.push(interval);
