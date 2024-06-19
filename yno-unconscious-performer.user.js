@@ -15,6 +15,15 @@
 // @run-at       document-end
 // ==/UserScript==
 
+// 自定义设置，可以修改
+// 同时音符之间演奏最短延迟，设置过小可能无法及时切换音调导致弹错音符
+const Same_Time_Interval = 100;
+// 在低于最低音调（C3）多少半音的音符用最低音调弹奏，再高则忽略该音符
+const Allow_Exceed_Range_low = 2;
+// 在高于最高音调（B5）多少半音的音符用最高音调弹奏，再高则忽略该音符
+const Allow_Exceed_Range_high = 2;
+
+// 全局变量，不能修改
 let nowGroup = "";
 let isLoop = false;
 let stopped = true;
@@ -836,6 +845,8 @@ function ReadMIDIInfo() {
 function MIDI2Song(trackIndexs) {
     function approximateIndexToKey(index) {
         index = index - 60;
+        if (index <= -12 - Allow_Exceed_Range_low) return 0;
+        if (index >= 25 + Allow_Exceed_Range_high) return 0;
         if (index <= -12) return 1;
         if (index >= 25) return 36;
         return index + 12;
@@ -858,18 +869,20 @@ function MIDI2Song(trackIndexs) {
     let lastKey = 0;
     let keyList = [];
     let lastInterval = 0;
+    let sameTimeOffsetSum = 0;
 
     for (let i = 0; i < mix.length; i++) {
         // 音符演奏长度一致，故不用考虑durationTicks
-        let interval = mix[i].ticks - lastInterval;
+        let interval = mix[i].ticks + sameTimeOffsetSum - lastInterval;
         let key = approximateIndexToKey(mix[i].midi);
-        if (interval < 40) {
+        if (interval < Same_Time_Interval) {
             // 如果同时间、同音符，则舍弃
             if (key === lastKey) {
                 continue;
             }
             else {
-                interval = 40;
+                interval = Same_Time_Interval;
+                sameTimeOffsetSum += Same_Time_Interval;
             }
         }
         intervalList.push(interval);
