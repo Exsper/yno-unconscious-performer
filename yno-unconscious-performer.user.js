@@ -2,7 +2,7 @@
 // @name         YNOproject Collective Unconscious Kalimba Performer
 // @name:zh-CN   YNOproject Collective Unconscious 卡林巴演奏家
 // @namespace    https://github.com/Exsper/
-// @version      0.1.2
+// @version      0.1.3
 // @description  Music can be played automatically based on the given score.
 // @description:zh-CN  可以根据给定乐谱自动演奏乐曲。
 // @author       Exsper
@@ -784,45 +784,61 @@ class midi {
 
 // ---------------------------------------------------------------------------------------
 
-function MIDI2Song(isAllTrack) {
-    // 把序号转换为音符，越界为0
-    function indexToKey(index) {
-        index = index - 60;
-        if (index <= -12) return 0;
-        if (index >= 25) return 0;
-        return index + 12;
-    }
+// 把序号转换为音符，越界为0
+function indexToKey(index) {
+    index = index - 60;
+    if (index <= -12) return 0;
+    if (index >= 25) return 0;
+    return index + 12;
+}
 
+function getTrackPlayableNoteCount(track) {
+    let playableCount = 0;
+    for (let i = 0; i < track.notes.length; i++) {
+        if (indexToKey(track.notes[i].midi) !== 0) playableCount += 1;
+    }
+    return playableCount;
+}
+
+function getTrackPlayableNoteLength(track) {
+    let playableLength = 0;
+    for (let i = 0; i < track.notes.length; i++) {
+        if (indexToKey(track.notes[i].midi) !== 0) playableLength += track.notes[i].durationTicks;
+    }
+    return playableLength;
+}
+
+// 检查轨道内音符可弹奏数，有大于20%的音符无法弹奏则舍弃掉该轨道
+function checkTrackPlayable(track) {
+    let noteCount = track.notes.length;
+    if (noteCount <= 0) return false;
+    let playableCount = getTrackPlayableNoteCount(track);
+    if ((playableCount / noteCount) < 0.8) return false;
+    return true;
+}
+
+function ReadMIDIInfo() {
+    if (!midiData) return null;
+
+    let midiJson = midiData.JSON();
+    let midiInfo = [];
+    for (let i = 0; i < midiJson.tracks.length; i++) {
+        let playableNoteCount = getTrackPlayableNoteCount(midiJson.tracks[i]);
+        let playableNoteLength = getTrackPlayableNoteLength(midiJson.tracks[i]);
+        let isPlayable = checkTrackPlayable(midiJson.tracks[i])
+        midiInfo.push({ index: i, playableNoteCount, playableNoteLength, isPlayable });
+    }
+    midiInfo = midiInfo.filter((a) => a.isPlayable === true);
+    midiInfo.sort((a, b) => b.playableNoteLength - a.playableNoteLength);
+    return midiInfo;
+}
+
+function MIDI2Song(trackIndexs) {
     function approximateIndexToKey(index) {
         index = index - 60;
         if (index <= -12) return 1;
         if (index >= 25) return 36;
         return index + 12;
-    }
-
-    // 检查轨道内音符可弹奏数，有大于10%的音符无法弹奏则舍弃掉该轨道
-    function checkTrackPlayable(track) {
-        let noteCount = track.notes.length;
-        if (noteCount <= 0) return false;
-        let playableCount = getTrackPlayableNoteCount(track);
-        if ((playableCount / noteCount) < 0.9) return false;
-        return true;
-    }
-
-    function getTrackPlayableNoteCount(track) {
-        let playableCount = 0;
-        for (let i = 0; i < track.notes.length; i++) {
-            if (indexToKey(track.notes[i].midi) !== 0) playableCount += 1;
-        }
-        return playableCount;
-    }
-
-    function getTrackPlayableNoteLength(track) {
-        let playableLength = 0;
-        for (let i = 0; i < track.notes.length; i++) {
-            if (indexToKey(track.notes[i].midi) !== 0) playableLength += track.notes[i].durationTicks;
-        }
-        return playableLength;
     }
 
     if (!midiData) return null;
@@ -831,27 +847,12 @@ function MIDI2Song(isAllTrack) {
 
     let mix = [];
 
-    if (isAllTrack) {
-        for (let i = 0; i < midiJson.tracks.length; i++) {
-            if (checkTrackPlayable(midiJson.tracks[i])) mix = mix.concat(midiJson.tracks[i].notes);
-        }
-        if (mix.length <= 0) return null;
+    for (let i = 0; i < midiJson.tracks.length; i++) {
+        if (trackIndexs.includes(i)) mix = mix.concat(midiJson.tracks[i].notes);
+    }
+    if (mix.length <= 0) return null;
 
-        mix.sort((a, b) => (a.ticks === b.ticks ? a.midi - b.midi : a.ticks - b.ticks));
-    }
-    else {
-        // 选择可弹奏音符最长的音轨
-        let maxNoteTrackIndex = 0;
-        let maxNoteLength = 0;
-        for (let i = 0; i < midiJson.tracks.length; i++) {
-            let noteLength = getTrackPlayableNoteLength(midiJson.tracks[i]);
-            if (noteLength > maxNoteLength) {
-                maxNoteTrackIndex = i;
-                maxNoteLength = noteLength;
-            }
-        }
-        mix = midiJson.tracks[maxNoteTrackIndex].notes;
-    }
+    mix.sort((a, b) => (a.ticks === b.ticks ? a.midi - b.midi : a.ticks - b.ticks));
 
     let intervalList = [];
     let lastKey = 0;
@@ -889,9 +890,9 @@ function MIDI2Song(isAllTrack) {
     return { intervalList, keyList, endWaitTime };
 }
 
-async function playMIDI(isAllTrack) {
+async function playMIDI(trackIndexs) {
     nowGroup = "";
-    let keyInfo = MIDI2Song(isAllTrack);
+    let keyInfo = MIDI2Song(trackIndexs);
     if (!keyInfo) {
         alert("不支持演奏该MIDI音乐");
         stopped = true;
@@ -950,6 +951,33 @@ function init() {
             reader.onload = function () {
                 rawdata = new Uint8Array(this.result);
                 midiData = midi.import(rawdata);
+
+                let $mainTable = $("#rs-table");
+                $mainTable.empty();
+                let midiInfo = ReadMIDIInfo();
+                if (!midiInfo || midiInfo.length <= 0) {
+                    alert("不支持演奏该MIDI音乐");
+                    return;
+                }
+                let $ltr = $("<tr>", { style: "width:100%;" });
+                let $ltd = $("<td>", { style: "width:30%" }).appendTo($ltr);
+                $("<span>", { text: "演奏音轨" }).appendTo($ltd);
+                $ltd = $("<td>", { style: "width:35%" }).appendTo($ltr);
+                $("<span>", { text: "可演奏音符数" }).appendTo($ltd);
+                $ltd = $("<td>", { style: "width:35%" }).appendTo($ltr);
+                $("<span>", { text: "可演奏长度" }).appendTo($ltd);
+                $ltr.appendTo($mainTable);
+                midiInfo.map((trackInfo, index) => {
+                    $ltr = $("<tr>");
+                    $ltd = $("<td>").appendTo($ltr);
+                    let $trackCheckbox = $("<input>", { type: "checkbox", class: "rs-track", track: trackInfo.index }).appendTo($ltd);
+                    if (index === 0) $trackCheckbox.prop("checked", true);
+                    $ltd = $("<td>").appendTo($ltr);
+                    $("<span>", { text: trackInfo.playableNoteCount }).appendTo($ltd);
+                    $ltd = $("<td>").appendTo($ltr);
+                    $("<span>", { text: trackInfo.playableNoteLength }).appendTo($ltd);
+                    $ltr.appendTo($mainTable);
+                });
             };
         }
         catch (err) {
@@ -960,23 +988,17 @@ function init() {
     let $songText = $("<textarea>", { id: "rs-song", style: "min-height: 80px;" }).appendTo($mainDiv);
     $("<span>", { id: "rs-bpm-label", text: "BPM: " }).appendTo($mainDiv);
     let $numBox = $("<input>", { type: "text", id: "rs-bpm", val: "120", style: "width:30px;align-self:center;" }).appendTo($mainDiv);
-    let $allTrackCheckBox = $("<input>", { type: "checkbox", id: "rs-allTrack" }).appendTo($mainDiv);
-    let $allTrackCheckBoxLabel = $("<label>").attr({ for: "rs-allTrack", id: "rs-allTrack-label" }).text("演奏全部音轨").appendTo($mainDiv);
-    $allTrackCheckBox.hide();
-    $allTrackCheckBoxLabel.hide();
     $textTypeSelect.on("change", () => {
         if ($textTypeSelect.val() === "midi") {
             $("#rs-file").show();
-            $("#rs-allTrack").show();
-            $("#rs-allTrack-label").show();
+            $("#rs-table").show();
             $("#rs-song").hide();
             $("#rs-bpm-label").hide();
             $("#rs-bpm").hide();
         }
         else {
             $("#rs-file").hide();
-            $("#rs-allTrack").hide();
-            $("#rs-allTrack-label").hide();
+            $("#rs-table").hide();
             $("#rs-song").show();
             $("#rs-bpm-label").show();
             $("#rs-bpm").show();
@@ -988,7 +1010,12 @@ function init() {
             stopped = false;
             $checkButton.text("停止演奏");
             if ($("#rs-select-type").val() === "midi") {
-                await playMIDI($("#rs-allTrack").prop("checked"));
+                let tracks = [];
+                let $checkedTrack = $(".rs-track:checked");
+                $checkedTrack.each((i, e) => {
+                    tracks.push(parseInt(e.attributes["track"].value));
+                })
+                await playMIDI(tracks);
             }
             else {
                 let song = $songText.val();
@@ -1018,6 +1045,8 @@ function init() {
         $("#rs-div").hide();
         $("#rs-open").show();
     });
+    let $mainTable = $("<table>", { id: "rs-table", style: "table-layout:fixed; width:100%; word-wrap: break-word;" }).appendTo($mainDiv);
+    $mainTable.hide();
     $mainDiv.appendTo($("body"));
 }
 
