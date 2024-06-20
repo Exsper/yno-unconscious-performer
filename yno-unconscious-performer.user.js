@@ -2,7 +2,7 @@
 // @name         YNOproject Collective Unconscious Kalimba Performer
 // @name:zh-CN   YNOproject Collective Unconscious 卡林巴演奏家
 // @namespace    https://github.com/Exsper/
-// @version      0.1.3
+// @version      0.1.4
 // @description  Music can be played automatically based on the given score.
 // @description:zh-CN  可以根据给定乐谱自动演奏乐曲。
 // @author       Exsper
@@ -826,6 +826,13 @@ function checkTrackPlayable(track) {
     return true;
 }
 
+// 检查是否在相同音阶
+function checkKeyInSameScale(key1, key2) {
+    let scale1 = parseInt((key1 - 1) / 12);
+    let scale2 = parseInt((key2 - 1) / 12);
+    return scale1 === scale2;
+}
+
 function ReadMIDIInfo() {
     if (!midiData) return null;
 
@@ -875,10 +882,14 @@ function MIDI2Song(trackIndexs) {
         // 音符演奏长度一致，故不用考虑durationTicks
         let interval = mix[i].ticks + sameTimeOffsetSum - lastInterval;
         let key = approximateIndexToKey(mix[i].midi);
+        if (key === 0) continue;
         if (interval < Same_Time_Interval) {
             // 如果同时间、同音符，则舍弃
             if (key === lastKey) {
                 continue;
+            }
+            else if (checkKeyInSameScale(key, lastKey)) {
+                // 相同音阶，不用考虑短时切换音阶造成的错误弹奏
             }
             else {
                 interval = Same_Time_Interval;
