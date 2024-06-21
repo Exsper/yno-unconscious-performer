@@ -2,7 +2,7 @@
 // @name         YNOproject Collective Unconscious Kalimba Performer
 // @name:zh-CN   YNOproject Collective Unconscious 卡林巴演奏家
 // @namespace    https://github.com/Exsper/
-// @version      0.1.4
+// @version      0.1.5
 // @description  Music can be played automatically based on the given score.
 // @description:zh-CN  可以根据给定乐谱自动演奏乐曲。
 // @author       Exsper
@@ -893,7 +893,7 @@ function MIDI2Song(trackIndexs) {
             }
             else {
                 interval = Same_Time_Interval;
-                sameTimeOffsetSum += Same_Time_Interval;
+                sameTimeOffsetSum += Same_Time_Interval - interval;
             }
         }
         intervalList.push(interval);
