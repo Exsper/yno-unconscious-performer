@@ -2,7 +2,7 @@
 // @name         YNOproject Collective Unconscious Kalimba Performer
 // @name:zh-CN   YNOproject Collective Unconscious 卡林巴演奏家
 // @namespace    https://github.com/Exsper/
-// @version      0.1.5
+// @version      0.1.6
 // @description  Music can be played automatically based on the given score.
 // @description:zh-CN  可以根据给定乐谱自动演奏乐曲。
 // @author       Exsper
@@ -572,11 +572,11 @@ class midi {
                                     case 0x2f:
                                         break;
                                     case 0x03:
-                                    // 给当前mtrk块同序号的音轨改名
-                                    // newmidi.Mtrk[n].name = '';
-                                    // for (let q = 1; q <= midi_file[i]; q++)
-                                    //     newmidi.Mtrk[n].name += String.fromCharCode(midi_file[i + q]);
-                                    // break;
+                                        // 给当前mtrk块同序号的音轨改名
+                                        // newmidi.Mtrk[n].name = '';
+                                        // for (let q = 1; q <= midi_file[i]; q++)
+                                        //     newmidi.Mtrk[n].name += String.fromCharCode(midi_file[i + q]);
+                                        break;
                                     case 0x58:
                                         if (timeline == 0) {
                                             newmidi.time_signature = [midi_file[i + 1], 1 << midi_file[i + 2]];
@@ -878,9 +878,12 @@ function MIDI2Song(trackIndexs) {
     let lastInterval = 0;
     let sameTimeOffsetSum = 0;
 
+    let bpm = midiJson.header.tempos.pop().bpm;
+    let realTimePerTick = 60000 / bpm / midiJson.header.tick;
+
     for (let i = 0; i < mix.length; i++) {
         // 音符演奏长度一致，故不用考虑durationTicks
-        let interval = mix[i].ticks + sameTimeOffsetSum - lastInterval;
+        let interval = mix[i].ticks * realTimePerTick + sameTimeOffsetSum - lastInterval;
         let key = approximateIndexToKey(mix[i].midi);
         if (key === 0) continue;
         if (interval < Same_Time_Interval) {
@@ -902,7 +905,6 @@ function MIDI2Song(trackIndexs) {
         lastInterval += interval;
     }
 
-    let bpm = midiJson.header.tempos.pop().bpm;
     let lastnote = mix.pop();
     let endWaitTime = lastnote.durationTicks;
     if (bpm && bpm > 0) {
@@ -910,6 +912,7 @@ function MIDI2Song(trackIndexs) {
         let toEnd = itv - lastnote.ticks % itv;
         if (toEnd > endWaitTime) endWaitTime = toEnd;
     }
+    endWaitTime *= realTimePerTick;
 
     return { intervalList, keyList, endWaitTime };
 }
