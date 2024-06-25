@@ -2,7 +2,7 @@
 // @name         YNOproject Collective Unconscious Kalimba Performer
 // @name:zh-CN   YNOproject Collective Unconscious 卡林巴演奏家
 // @namespace    https://github.com/Exsper/
-// @version      0.1.6
+// @version      0.1.7
 // @description  Music can be played automatically based on the given score.
 // @description:zh-CN  可以根据给定乐谱自动演奏乐曲。
 // @author       Exsper
@@ -17,7 +17,7 @@
 
 // 自定义设置，可以修改
 // 同时音符之间演奏最短延迟，设置过小可能无法及时切换音调导致弹错音符
-const Same_Time_Interval = 100;
+const Same_Time_Interval = 40;
 // 在低于最低音调（C3）多少半音的音符用最低音调弹奏，再高则忽略该音符
 const Allow_Exceed_Range_low = 2;
 // 在高于最高音调（B5）多少半音的音符用最高音调弹奏，再高则忽略该音符
@@ -849,9 +849,9 @@ function ReadMIDIInfo() {
     return midiInfo;
 }
 
-function MIDI2Song(trackIndexs) {
+function MIDI2Song(trackIndexs, keyConflictMethod = "all") {
     function approximateIndexToKey(index) {
-        index = index - 60;
+        index = index - 59;
         if (index <= -12 - Allow_Exceed_Range_low) return 0;
         if (index >= 25 + Allow_Exceed_Range_high) return 0;
         if (index <= -12) return 1;
@@ -875,7 +875,7 @@ function MIDI2Song(trackIndexs) {
     let intervalList = [];
     let lastKey = 0;
     let keyList = [];
-    let lastInterval = 0;
+    let totalInterval = 0;
     let sameTimeOffsetSum = 0;
 
     let bpm = midiJson.header.tempos.pop().bpm;
@@ -883,10 +883,10 @@ function MIDI2Song(trackIndexs) {
 
     for (let i = 0; i < mix.length; i++) {
         // 音符演奏长度一致，故不用考虑durationTicks
-        let interval = mix[i].ticks * realTimePerTick + sameTimeOffsetSum - lastInterval;
+        let interval = mix[i].ticks * realTimePerTick + sameTimeOffsetSum - totalInterval;
         let key = approximateIndexToKey(mix[i].midi);
         if (key === 0) continue;
-        if (interval < Same_Time_Interval) {
+        if ((lastKey !== 0) && (interval < Same_Time_Interval)) {
             // 如果同时间、同音符，则舍弃
             if (key === lastKey) {
                 continue;
@@ -895,14 +895,40 @@ function MIDI2Song(trackIndexs) {
                 // 相同音阶，不用考虑短时切换音阶造成的错误弹奏
             }
             else {
-                interval = Same_Time_Interval;
-                sameTimeOffsetSum += Same_Time_Interval - interval;
+                if (keyConflictMethod === "all") {
+                    // 全部弹奏
+                    interval = Same_Time_Interval;
+                    sameTimeOffsetSum += Same_Time_Interval - interval;
+                }
+                else {
+                    if (keyConflictMethod === "high") {
+                        // 取高音
+                        if (key <= lastKey) continue;
+                    }
+                    else if (keyConflictMethod === "low") {
+                        // 取低音
+                        if (key >= lastKey) continue;
+                    }
+                    else if (keyConflictMethod === "middle") {
+                        // 取靠近F4的音
+                        if (Math.abs(key - 18) >= Math.abs(lastKey - 18)) continue;
+                    }
+                    // 删除上一个key
+                    let _lastInterval = intervalList.pop();
+                    let _lastKey = keyList.pop();
+                    if (keyList.length <= 0) lastKey = 0;
+                    else lastKey = keyList[keyList.length - 1];
+                    totalInterval -= _lastInterval;
+                    // 重复该次循环，重新判断
+                    i -= 1;
+                    continue;
+                }
             }
         }
         intervalList.push(interval);
         keyList.push(key);
         lastKey = key;
-        lastInterval += interval;
+        totalInterval += interval;
     }
 
     let lastnote = mix.pop();
@@ -917,9 +943,9 @@ function MIDI2Song(trackIndexs) {
     return { intervalList, keyList, endWaitTime };
 }
 
-async function playMIDI(trackIndexs) {
+async function playMIDI(trackIndexs, keyConflictMethod = "all") {
     nowGroup = "";
-    let keyInfo = MIDI2Song(trackIndexs);
+    let keyInfo = MIDI2Song(trackIndexs, keyConflictMethod);
     if (!keyInfo) {
         alert("不支持演奏该MIDI音乐");
         stopped = true;
@@ -969,6 +995,7 @@ function init() {
     $textTypeSelect.append($('<option></option>').attr('value', '0').text('标准音符'));
     $textTypeSelect.append($('<option></option>').attr('value', 'je').text('JE谱'));
     $textTypeSelect.append($('<option></option>').attr('value', 'midi').text('MIDI'));
+    $textTypeSelect.val("0");
     let $file = $("<input>", { type: "file", id: "rs-file", style: "font-size: 10px; align-self: center; display: inline-block;" }).appendTo($mainDiv);
     $file.on("change", () => {
         let rawdata;
@@ -1019,6 +1046,8 @@ function init() {
         if ($textTypeSelect.val() === "midi") {
             $("#rs-file").show();
             $("#rs-table").show();
+            $("#rs-select-conflict-label").show();
+            $("#rs-select-conflict").show();
             $("#rs-song").hide();
             $("#rs-bpm-label").hide();
             $("#rs-bpm").hide();
@@ -1026,6 +1055,8 @@ function init() {
         else {
             $("#rs-file").hide();
             $("#rs-table").hide();
+            $("#rs-select-conflict-label").hide();
+            $("#rs-select-conflict").hide();
             $("#rs-song").show();
             $("#rs-bpm-label").show();
             $("#rs-bpm").show();
@@ -1039,10 +1070,11 @@ function init() {
             if ($("#rs-select-type").val() === "midi") {
                 let tracks = [];
                 let $checkedTrack = $(".rs-track:checked");
+                let keyConflictMethod = $("#rs-select-conflict").val();
                 $checkedTrack.each((i, e) => {
                     tracks.push(parseInt(e.attributes["track"].value));
                 })
-                await playMIDI(tracks);
+                await playMIDI(tracks, keyConflictMethod);
             }
             else {
                 let song = $songText.val();
@@ -1074,6 +1106,16 @@ function init() {
     });
     let $mainTable = $("<table>", { id: "rs-table", style: "table-layout:fixed; width:100%; word-wrap: break-word;" }).appendTo($mainDiv);
     $mainTable.hide();
+    let $keyConflictMethodLabel = $("<span>", { id: "rs-select-conflict-label", text: "音符冲突处理：" }).appendTo($mainDiv);
+    $keyConflictMethodLabel.hide();
+    let $keyConflictMethodSelect = $("<select>", { id: "rs-select-conflict" }).appendTo($mainDiv);
+    $keyConflictMethodSelect.append($('<option></option>').attr('value', 'all').text('全部弹奏'));
+    $keyConflictMethodSelect.append($('<option></option>').attr('value', 'high').text('取高音'));
+    $keyConflictMethodSelect.append($('<option></option>').attr('value', 'low').text('取低音'));
+    $keyConflictMethodSelect.append($('<option></option>').attr('value', 'middle').text('取接近F4的音'));
+    $keyConflictMethodSelect.val("all");
+    $keyConflictMethodSelect.hide();
+
     $mainDiv.appendTo($("body"));
 }
 
