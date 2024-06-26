@@ -2,7 +2,7 @@
 // @name         YNOproject Collective Unconscious Kalimba Performer
 // @name:zh-CN   YNOproject Collective Unconscious 卡林巴演奏家
 // @namespace    https://github.com/Exsper/
-// @version      0.1.7
+// @version      0.1.8
 // @description  Music can be played automatically based on the given score.
 // @description:zh-CN  可以根据给定乐谱自动演奏乐曲。
 // @author       Exsper
@@ -18,7 +18,7 @@
 // 自定义设置，可以修改
 // 同时音符之间演奏最短延迟，设置过小可能无法及时切换音调导致弹错音符
 const Same_Time_Interval = 40;
-// 在低于最低音调（C3）多少半音的音符用最低音调弹奏，再高则忽略该音符
+// 在低于最低音调（C3）多少半音的音符用最低音调弹奏，再低则忽略该音符
 const Allow_Exceed_Range_low = 2;
 // 在高于最高音调（B5）多少半音的音符用最高音调弹奏，再高则忽略该音符
 const Allow_Exceed_Range_high = 2;
@@ -127,23 +127,17 @@ function getKeyData(code) {
 }
 
 function switchToGroup(group) {
-    switch (group) {
-        case "left": return simulateKeyboardInput("ArrowLeft", 37);
-        case "down": return simulateKeyboardInput("ArrowDown", 40);
-        case "right": return simulateKeyboardInput("ArrowRight", 39);
-        // case "up": return simulateKeyboardInput("ArrowUp",38);
-        default: return;
-    }
-}
-
-function playSingleKey(group, key, code) {
     if (nowGroup !== group) {
         nowGroup = group;
-        switchToGroup(nowGroup);
+        switch (group) {
+            case "left": return simulateKeyboardInput("ArrowLeft", 37);
+            case "down": return simulateKeyboardInput("ArrowDown", 40);
+            case "right": return simulateKeyboardInput("ArrowRight", 39);
+            // case "up": return simulateKeyboardInput("ArrowUp",38);
+            default: return;
+        }
     }
-    simulateKeyboardInput(key, code);
 }
-
 
 function wait(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -159,10 +153,22 @@ async function playSong(song, bpm) {
     for (let i = 0; i < keys.length; i++) {
         let keyData = getKeyData(keys[i]);
         if (keyData !== null) {
-            playSingleKey(keyData.group, keyData.key, keyData.keyCode);
+            if (nowGroup === "") switchToGroup(keyData.group);
+            simulateKeyboardInput(keyData.key, keyData.keyCode);
         }
+
         if (stopped) break;
-        await wait(interval);
+
+        await wait(interval / 2);
+
+        if (stopped) break;
+
+        let nextKey = "";
+        if (i < keys.length - 1) nextKey = getKeyData(keys[i + 1]);
+        else nextKey = getKeyData(keys[0]);
+        if (nextKey !== null) switchToGroup(nextKey.group);
+
+        await wait(interval / 2);
     }
     if (stopped) {
         $("#rs-play").text("开始演奏");
@@ -958,15 +964,32 @@ async function playMIDI(trackIndexs, keyConflictMethod = "all") {
     stopped = false;
     for (let i = 0; ;) {
         if (stopped) break;
-        await wait(intervalList[i]);
+
+        await wait(intervalList[i] / 2);
+
+        if (stopped) break;
+
         let keyData = getKeyData(keyList[i].toString());
         if (keyData !== null) {
-            playSingleKey(keyData.group, keyData.key, keyData.keyCode);
+            if (nowGroup === "") switchToGroup(keyData.group);
+            simulateKeyboardInput(keyData.key, keyData.keyCode);
         }
+
+        if (i < intervalList.length - 1) await wait(intervalList[i + 1] / 2);
+        else await wait(intervalList[0] / 2);
+
+        if (stopped) break;
+
+        let nextKey = "";
+        if (i < keyList.length - 1) nextKey = getKeyData(keyList[i + 1].toString());
+        else nextKey = getKeyData(keyList[0].toString());
+        if (nextKey !== null) switchToGroup(nextKey.group);
+
         i++;
         if (i >= keyList.length) {
             if (isLoop) {
                 i = 0;
+                nowGroup = "";
                 await wait(endWaitTime);
                 continue;
             }
